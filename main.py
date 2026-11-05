@@ -61,6 +61,21 @@ def criar_embed_resultado(caso, escolha):
     return embed
 
 
+async def responder_erro(interaction, error):
+    causa = getattr(error, "original", error)
+    print(f"Falha em uma interação: {type(causa).__name__}.")
+    texto = "Não foi possível concluir a ação. Tente novamente ou use /caso para recomeçar."
+    if isinstance(causa, discord.Forbidden):
+        texto = "Não tenho permissão para concluir a ação. Confira minhas permissões neste canal."
+    try:
+        if interaction.response.is_done():
+            await interaction.followup.send(texto, ephemeral=True)
+        else:
+            await interaction.response.send_message(texto, ephemeral=True)
+    except discord.HTTPException:
+        pass  # Uma interação expirada já não permite enviar respostas.
+
+
 class InvestigacaoView(discord.ui.View):
     def __init__(self, chave, caso, jogador):
         super().__init__(timeout=300)
@@ -93,6 +108,8 @@ class InvestigacaoView(discord.ui.View):
         return True
 
     def encerrar(self, motivo):
+        if not self.ativa:
+            return
         self.ativa = False
         if investigacoes.get(self.chave) is self:
             del investigacoes[self.chave]
@@ -114,15 +131,7 @@ class InvestigacaoView(discord.ui.View):
         await self.atualizar_mensagem()
 
     async def on_error(self, interaction, error, item):
-        print(f"Falha em uma interação: {type(error).__name__}.")
-        try:
-            texto = "Não foi possível concluir a ação. Use /caso se precisar recomeçar."
-            if interaction.response.is_done():
-                await interaction.followup.send(texto, ephemeral=True)
-            else:
-                await interaction.response.send_message(texto, ephemeral=True)
-        except discord.HTTPException:
-            pass  # Uma interação expirada já não permite enviar respostas.
+        await responder_erro(interaction, error)
 
     @discord.ui.button(label="Investigar pistas", emoji="🔎", style=discord.ButtonStyle.primary)
     async def investigar(self, interaction, button):
@@ -175,6 +184,9 @@ async def ajuda(interaction: discord.Interaction):
         inline=False,
     )
     embed.add_field(
+        name="/desistir", value="Encerra sua investigação sem revelar a solução.", inline=False
+    )
+    embed.add_field(
         name="Como começar",
         value=(
             "Use /caso e leia o relato. Clique em **Investigar pistas** para revelar "
@@ -225,6 +237,33 @@ async def iniciar_caso(interaction: discord.Interaction):
         pass  # O próximo clique também fornece a mensagem para a View.
     if not view.ativa:
         await view.atualizar_mensagem()
+
+
+@tree.command(name="desistir", description="Encerre sua investigação sem revelar a solução.")
+@app_commands.guild_only()
+async def desistir(interaction: discord.Interaction):
+    chave = (interaction.guild_id, interaction.user.id)
+    view = investigacoes.get(chave)
+    if view is None:
+        await interaction.response.send_message(
+            "Você não tem uma investigação ativa neste servidor. Use /caso para começar.",
+            ephemeral=True,
+        )
+        return
+
+    view.encerrar("Investigação encerrada por desistência. Use /caso para jogar novamente.")
+    try:
+        await interaction.response.send_message(
+            "📁 Investigação encerrada sem revelar a solução. Use /caso quando quiser voltar.",
+            ephemeral=True,
+        )
+    finally:
+        await view.atualizar_mensagem()
+
+
+@tree.error
+async def erro_comando(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    await responder_erro(interaction, error)
 
 
 @bot.event
