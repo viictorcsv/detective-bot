@@ -1,4 +1,4 @@
-# 🔎 DetectiveBot
+# DetectiveBot
 
 Jogo de investigação para Discord desenvolvido em Python. Cada jogador recebe um mistério fictício, descobre três pistas e escolhe um suspeito. Uma única acusação encerra o caso e apresenta a explicação, com acerto ou erro.
 
